@@ -1,7 +1,10 @@
+"""
+Core builder interfaces.
+
+"""
 import logging
 import itertools
 
-import matplotlib; matplotlib.use('Agg')
 import daft
 from toposort import toposort
 
@@ -131,8 +134,8 @@ class Node:
             kwargs['name'] = name
 
         kwargs.setdefault('scale', 2)
-        if 'fixed' in kwargs:
-            kwargs['offset'] = (0, 10)
+        if 'fixed' in kwargs and 'offset' not in kwargs:
+            kwargs['offset'] = (0, -25) if self.placement.startswith('below') else (0, 10)
 
         return kwargs
 
@@ -436,7 +439,7 @@ class PGM:
         x_units = x + width
         y_units = y + height
 
-        # Need to expand further to accomodate plates, if present
+        # Need to expand further to accommodate plates, if present
         # Right now, we just assume plates are present all around.
         # TODO: actually figure out if plates are present and only expand if so.
         x_units += 0.3

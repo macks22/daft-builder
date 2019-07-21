@@ -1,9 +1,11 @@
+import matplotlib; matplotlib.use('Agg')
 import pytest
 
 from daft_builder import utils
 
 
 @pytest.mark.parametrize('symbol,expected', [
+    ("test", "test"),
     (r"$X$", "X"),
     (r"$\theta$", "theta"),
     (r"$\Sigma$", "Sigma"),

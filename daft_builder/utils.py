@@ -1,3 +1,9 @@
+"""
+Utility functions.
+
+"""
+
+
 def name_from_symbol(symbol):
     starts_with_modifier = symbol.startswith('$\\')
     symbol = symbol.strip('$').replace('\\', '')
