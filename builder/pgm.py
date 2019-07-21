@@ -239,21 +239,27 @@ class Node:
 
 class Data(Node):
     def __init__(self, symbol, **kwargs):
-        kwargs['observed'] = True
+        kwargs.setdefault('observed', True)
         super().__init__(symbol, **kwargs)
 
 
 class Param(Node):
     def __init__(self, symbol, of=None, **kwargs):
         super().__init__(symbol, **kwargs)
-        self.edges_to = [self.anchor_node if of is None else of]
+        if of is None:
+            self.edges_to += [self.anchor_node]
+        elif isinstance(of, str):
+            self.edges_to += [of]
+        elif hasattr(of, '__iter__'):
+            self.edges_to += list(of)
+        else:
+            raise ValueError(f"unrecognized type for argument 'of': {of} ({type(of)})")
 
 
-class HyperParam(Node):
+class HyperParam(Param):
     def __init__(self, symbol, of=None, **kwargs):
-        kwargs['fixed'] = True
-        super().__init__(symbol, **kwargs)
-        self.edges_to = [self.anchor_node if of is None else of]
+        kwargs.setdefault('fixed', True)
+        super().__init__(symbol, of, **kwargs)
 
 
 class Plate:
