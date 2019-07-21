@@ -396,7 +396,7 @@ class Plate:
 
     def with_nodes(self, *node_builders):
         for node in node_builders:
-            # These can either be actual Node builder objects or names of
+            # These can either be actual Node daft_builder objects or names of
             # nodes already added to the PGM elsewhere (or to be added later)
             if not isinstance(node, str):
                 node.plate = self
@@ -471,7 +471,7 @@ class PGM:
         return pgm
 
     def fill_nodes_refd_by_name(self):
-        """Sub in actual node builder anywhere node was referenced by name in any plates."""
+        """Sub in actual node daft_builder anywhere node was referenced by name in any plates."""
         node_mapping = {n.name: n for n in self.all_node_builders if not isinstance(n, str)}
         for plate in self.plates:
             plate.nodes = [node_mapping[n] if isinstance(n, str) else n for n in plate.nodes]
