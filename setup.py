@@ -31,6 +31,7 @@ def setup_package():
         description="Wrapper library on daft that provides a builder interface for rendering "
                     "probabilistic graphical models (PGMs).",
         long_description=read("README.md"),
+        long_description_content_type="text/markdown",
         url="https://github.com/macks22/daft-builder",
         packages=["daft_builder"],
         tests_require=test_requirements,
