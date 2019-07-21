@@ -237,6 +237,25 @@ class Node:
         return daft.Node(**kwargs)
 
 
+class Data(Node):
+    def __init__(self, symbol, **kwargs):
+        kwargs['observed'] = True
+        super().__init__(symbol, **kwargs)
+
+
+class Param(Node):
+    def __init__(self, symbol, of=None, **kwargs):
+        super().__init__(symbol, **kwargs)
+        self.edges_to = [self.anchor_node if of is None else of]
+
+
+class HyperParam(Node):
+    def __init__(self, symbol, of=None, **kwargs):
+        kwargs['fixed'] = True
+        super().__init__(symbol, **kwargs)
+        self.edges_to = [self.anchor_node if of is None else of]
+
+
 class Plate:
     """Helper class to build `daft.Plate` objects with nodes inside them."""
 
