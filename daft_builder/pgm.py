@@ -1,127 +1,12 @@
 import logging
 import itertools
-from functools import reduce
 
 import daft
+from toposort import toposort
+
+from daft_builder import utils
 
 logger = logging.getLogger(__name__)
-
-
-def name_from_symbol(symbol):
-    starts_with_modifier = symbol.startswith('$\\')
-    symbol = symbol.strip('$').replace('\\', '')
-    if starts_with_modifier and '{' in symbol:   # e.g. \tilde{X}
-        start = symbol.index('{')
-        end = symbol.index('}')
-        without_modifier = symbol[start + 1: end] + symbol[end + 1:]
-        modifier = symbol[:start]
-        base, extras = without_modifier.split('_', 1)
-        return '_'.join([base, modifier, extras])
-    elif '_{' in symbol:  # e.g. X_{i, j}
-        without_sub, rest = symbol.split('_{', 1)
-        subscript = rest.split('}')[0].replace(',', '').replace(' ', '')
-        return '_'.join([without_sub, subscript])
-    elif '^' in symbol:  # e.g. \sigma_c^2
-        base, exp = symbol.split('^')
-        if exp != '2':
-            raise ValueError('unable to handle names with exponents not equal to 2')
-        return base + '_' + 'sq'
-    else:
-        return symbol
-
-
-def node_bounds(*nodes):
-    """Get the min and max for the x- and y-coordinates for an iterable of `daft.Node`s."""
-    xs = list(n.x for n in nodes)
-    ys = list(n.y for n in nodes)
-    return (min(xs), max(xs)), (min(ys), max(ys))
-
-
-def bound_nodes_with_rect(*nodes):
-    """Figure out plate rectangle shape arguments that will result in a plate
-    that fully encompasses all the given nodes with enough space to spare for
-    a label and margins.
-
-    """
-    (min_x, max_x), (min_y, max_y) = node_bounds(*nodes)
-    plate_x = min_x - 0.4
-    plate_y = min_y - 0.35
-
-    plate_x_right = max_x + 0.8
-    plate_y_top = max_y + 0.75
-
-    plate_width = round(plate_x_right - min_x, 2)
-    plate_height = round(plate_y_top - min_y, 2)
-
-    return plate_x, plate_y, plate_width, plate_height
-
-
-def toposort(dep_graph):
-    """Perform a topological sort of a dependency graph, returning the
-    names of nodes in topologically ordered sets.
-    Dependencies are expressed as a dictionary whose keys are items
-    and whose values are a set of dependent items. Output is a list of
-    sets in topological order. The first set consists of items with no
-    dependencies. Each subsequent set consists of items that depend upon
-    items in the preceding sets.
-
-    Args:
-        dep_graph (dict): directed graph represented as adjacency list,
-            with string keys and sets of strings as values. Any nodes
-            without dependencies can either be included as keys with an
-            empty set for values, or excluded, which will be interpreted
-            in the same manner.
-
-    Returns:
-        generator[set]: ordered sets of nodes, such that the nodes in each
-            set do not depend on any of the nodes in subsequent sets, or
-            on each other.
-
-    Examples:
-        A graph with only 1-hop dependencies:
-        >>> graph = {"a": {"b", "c", "d"}, "c": {"d"}}
-        >>> tuple(toposort(graph))  # ({'b', 'd'}, {'c'}, {'a'})
-        And here is another with 2-hop dependencies:
-        >>> graph = {"a": {"b", "c", "d"}, "c": {"d"}, "e": {"g", "f", "q"}}
-        >>> tuple(toposort(graph))  # ({'b', 'd', 'g', 'f', 'q'}, {'c', 'e'}, {'a'})
-
-    Raises:
-        ValueError: if the dependency graph contains a cycle.
-    """
-    # Special case empty input.
-    if not dep_graph:
-        return
-
-    # Copy the input so as to leave it unmodified.
-    dep_graph = {k: set(v) for k, v in dep_graph.items()}
-
-    # Automatically add an empty set for any dependencies not included as keys.
-    all_deps = itertools.chain.from_iterable(v for v in dep_graph.values())
-    deps_without_deps = [dep for dep in all_deps if dep not in dep_graph]
-    dep_graph.update({dep: set() for dep in deps_without_deps})
-
-    # Ignore self dependencies.
-    for k, v in dep_graph.items():
-        v.discard(k)
-
-    # Find all items that don't depend on anything.
-    extra_items_in_deps = reduce(set.union, dep_graph.values()) - set(dep_graph.keys())
-
-    # Add empty dependencies where needed.
-    dep_graph.update({item: set() for item in extra_items_in_deps})
-
-    while True:
-        ordered = set(item for item, dep in dep_graph.items() if len(dep) == 0)
-        if not ordered:
-            break
-
-        yield ordered
-        dep_graph = {item: (dep - ordered)
-                     for item, dep in dep_graph.items()
-                     if item not in ordered}
-
-    if dep_graph:
-        raise ValueError(f'detected circular dependency in graph: {dep_graph}')
 
 
 class _PGM(daft.PGM):
@@ -241,7 +126,7 @@ class Node:
         kwargs['content'] = symbol
         name = kwargs.get('name')
         if name is None:
-            name = name_from_symbol(symbol)
+            name = utils.name_from_symbol(symbol)
             kwargs['name'] = name
 
         kwargs.setdefault('scale', 2)
@@ -328,7 +213,7 @@ class Plate:
         self.x, self.y, self.width, self.height = rect
 
     def place(self):
-        self.rect = bound_nodes_with_rect(*self.nodes)
+        self.rect = utils.bound_nodes_with_rect(*self.nodes)
 
     def deconflict_placement(self, other):
         logger.debug('Detected overlapping plates: %s, %s', self.label, other.label)
@@ -546,7 +431,7 @@ class PGM:
                     plate.deconflict_placement(other)
 
     def place(self):
-        x, y, width, height = bound_nodes_with_rect(*self.all_node_builders)
+        x, y, width, height = utils.bound_nodes_with_rect(*self.all_node_builders)
         x_units = x + width
         y_units = y + height
 
