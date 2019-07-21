@@ -1,18 +1,26 @@
+import logging
 import itertools
 from functools import reduce
 
 import daft
 
+logger = logging.getLogger(__name__)
+
 
 def name_from_symbol(symbol):
+    starts_with_modifier = symbol.startswith('$\\')
     symbol = symbol.strip('$').replace('\\', '')
-    if '{' in symbol:   # e.g. \tilde{X}
+    if starts_with_modifier and '{' in symbol:   # e.g. \tilde{X}
         start = symbol.index('{')
         end = symbol.index('}')
         without_modifier = symbol[start + 1: end] + symbol[end + 1:]
         modifier = symbol[:start]
         base, extras = without_modifier.split('_', 1)
         return '_'.join([base, modifier, extras])
+    elif '_{' in symbol:  # e.g. X_{i, j}
+        without_sub, rest = symbol.split('_{', 1)
+        subscript = rest.split('}')[0].replace(',', '').replace(' ', '')
+        return '_'.join([without_sub, subscript])
     elif '^' in symbol:  # e.g. \sigma_c^2
         base, exp = symbol.split('^')
         if exp != '2':
@@ -29,7 +37,7 @@ def node_bounds(*nodes):
     return (min(xs), max(xs)), (min(ys), max(ys))
 
 
-def plate_rect_shape(*nodes):
+def bound_nodes_with_rect(*nodes):
     """Figure out plate rectangle shape arguments that will result in a plate
     that fully encompasses all the given nodes with enough space to spare for
     a label and margins.
@@ -176,11 +184,26 @@ class Node:
         self.set_placement(kwargs)
 
         self.kwargs = self.add_kwarg_defaults(symbol, kwargs)
-        self.sybmol = symbol
+        self.symbol = symbol
         self.name = self.kwargs['name']
         self.edges_to = []
 
         self.plate = None
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.symbol}, **{self.kwargs})'
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __eq__(self, other):
+        if other is None or not hasattr(other, 'name'):
+            return False
+
+        return self.name == other.name
+
+    def __hash__(self):
+        return hash(self.name)
 
     def in_same_plate(self, other):
         """Compare containing plates of Node builders.
@@ -266,51 +289,140 @@ class Plate:
     """Helper class to build `daft.Plate` objects with nodes inside them."""
 
     def __init__(self, label, **kwargs):
-        kwargs['label'] = label
+        self.label = label
+        kwargs['label'] = self.label
+
         kwargs.setdefault('shift', -0.1)
         kwargs.setdefault('bbox', {"color": "none"})
         kwargs.setdefault('position', 'bottom right')
 
         self.kwargs = kwargs
         self.nodes = []
-        self.built_nodes = []
+
+        self.x = None
+        self.y = None
+        self.width = None
+        self.height = None
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.kwargs['label']}, **{self.kwargs})"
+
+    def __str__(self):
+        return self.__repr__()
 
     def __eq__(self, other):
         return self.kwargs['label'] == other.kwargs['label']
 
+    @property
+    def rect(self):
+        if (self.x is None or
+                self.y is None or
+                self.width is None or
+                self.height is None):
+            return None
+
+        return self.x, self.y, self.width, self.height
+
+    @rect.setter
+    def rect(self, rect):
+        self.x, self.y, self.width, self.height = rect
+
+    def place(self):
+        self.rect = bound_nodes_with_rect(*self.nodes)
+
+    def deconflict_placement(self, other):
+        logger.debug('Detected overlapping plates: %s, %s', self.label, other.label)
+        if self.same_nodes_as(other):  # complete overlap
+            logger.debug(f'Plate {self.label} has same nodes as other {other.label}')
+            other.surround(self)
+        elif self.contains_nodes_of(other):  # superset
+            logger.debug(f'Plate {self.label} contains nodes of other {other.label}')
+            self.surround(other)
+        elif other.contains_nodes_of(self):  # subset
+            logger.debug(f'Plate {other.label} contains nodes of other {self.label}')
+            other.surround(self)
+        else:  # both plates have nodes the other doesn't
+            logger.debug(f"Both plates have nodes the other doesn't: "
+                         f"{self.label}, {other.label}")
+            # shift other out of the way
+            other.y -= 0.2
+            other.height += 0.2
+            self.height += 0.1
+
+    def surround(self, other, amount=0.15):
+        x = y = width = height = 0  # offsets
+
+        shares_left = round(self.x, 2) == round(other.x, 2)
+        if shares_left:
+            logger.debug('shares left')
+            x = -amount
+            width = amount
+
+        shares_right = round(self.x + self.width, 2) == round(other.x + other.width, 2)
+        if shares_right:
+            logger.debug('shares right')
+            y = -amount
+            width += amount
+            height = 2 * amount
+
+        shares_bottom = round(self.y, 2) == round(other.y, 2)
+        if shares_bottom:
+            logger.debug('shares bottom')
+            y = -amount
+            height = amount
+
+        shares_top = round(self.y + self.height, 2) == round(other.y + other.height, 2)
+        if shares_top:
+            logger.debug('shares top')
+            height += amount
+
+        self.rect = (self.x + x, self.y + y,
+                     self.width + width, self.height + height)
+
+    def shares_nodes_with(self, other):
+        if not hasattr(other, 'nodes'):
+            raise ValueError("can't compare nodes to object without 'nodes' attribute.")
+
+        return bool(set(self.nodes).intersection(set(other.nodes)))
+
+    def same_nodes_as(self, other):
+        return set(self.nodes) == set(other.nodes)
+
+    def contains_nodes_of(self, other):
+        if not hasattr(other, 'nodes'):
+            raise ValueError("can't compare nodes to object without 'nodes' attribute.")
+
+        return set(self.nodes).issuperset(set(other.nodes))
+
     def with_nodes(self, *node_builders):
         for node in node_builders:
-            node.plate = self
+            # These can either be actual Node builder objects or names of
+            # nodes already added to the PGM elsewhere (or to be added later)
+            if not isinstance(node, str):
+                node.plate = self
 
         self.nodes += node_builders
         return self
-
-    def build_nodes(self):
-        self.built_nodes = [node_builder.build() for node_builder in self.nodes]
 
     def build(self):
         if not self.nodes:
             raise ValueError('plate must have at least one node')
 
-        # Position plate so that it encompasses all its nodes
-        # with room to spare for label and margins.
-        # Build the nodes first so we can use the (x, y) coords from the objects.
-        if not self.built_nodes:
-            self.build_nodes()
-        rect = plate_rect_shape(*self.built_nodes)
-        return daft.Plate(rect, **self.kwargs)
+        if self.rect is None:
+            self.place()
+
+        return daft.Plate(self.rect, **self.kwargs)
 
 
 class PGM:
     """Helper class to build PGMs from the bottom-up."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         kwargs.setdefault('origin', (0, 0))
         kwargs.setdefault('grid_unit', 4)
         kwargs.setdefault('label_params', {'fontsize': 18})
         kwargs.setdefault('observed_style', 'shaded')
 
-        self.args = args
         self.kwargs = kwargs
         self.nodes = []
         self.plates = []
@@ -333,31 +445,38 @@ class PGM:
         return self.nodes + list(self.plate_node_builders)
 
     def build(self):
-        pgm = _PGM(*self.args, **self.kwargs)
+        # First fill in any node builders that are referenced by name in the plates
+        self.fill_nodes_refd_by_name()
 
         # Handle placement of all nodes before building anything.
-        self.place_all_nodes()
+        self.place_nodes()
 
-        # Build plates and the nodes within them first.
+        # Next place all plates
+        self.place_plates()
+
+        if 'shape' not in self.kwargs:
+            self.kwargs['shape'] = self.place()
+
+        pgm = _PGM(**self.kwargs)
+
+        # Build plates and nodes.
         plates = [builder.build() for builder in self.plates]
-        plate_nodes = itertools.chain.from_iterable(
-            plate.built_nodes for plate in self.plates)
-
-        # Next build standalone nodes.
-        other_nodes = [builder.build() for builder in self.nodes]
-        all_nodes = other_nodes + list(plate_nodes)
-
-        # Now get all the edge pairs.
-        edge_pairs = self.get_edge_pairs()
+        nodes = [builder.build() for builder in self.all_node_builders]
 
         # Finally, add all plates, nodes, and edges to PGM
         pgm.add_plates(plates)
-        pgm.add_nodes(all_nodes)
-        pgm.add_edges(edge_pairs)
+        pgm.add_nodes(nodes)
+        pgm.add_edges(self.get_edge_pairs())
 
         return pgm
 
-    def place_all_nodes(self):
+    def fill_nodes_refd_by_name(self):
+        """Sub in actual node builder anywhere node was referenced by name in any plates."""
+        node_mapping = {n.name: n for n in self.all_node_builders if not isinstance(n, str)}
+        for plate in self.plates:
+            plate.nodes = [node_mapping[n] if isinstance(n, str) else n for n in plate.nodes]
+
+    def place_nodes(self):
         # Build dep graph
         builders = self.all_node_builders
         dep_graph = {n.name: set() if n.anchor_node is None else {n.anchor_node}
@@ -390,15 +509,15 @@ class PGM:
         elif builder.placement.startswith('below'):
             x, y = (anchor_x, anchor_y - 1)
         elif builder.placement == 'left_of':
-            x, y = (anchor_x - 0.6, anchor_y)
+            x, y = (anchor_x - 0.8, anchor_y)
             # Adjust for plate around anchor, if present
             if anchor.plate and not anchor.in_same_plate(builder):
-                x -= 0.3
+                x -= 0.1
         else:  # right_of
-            x, y = (anchor_x + 0.6, anchor_y)
+            x, y = (anchor_x + 0.8, anchor_y)
             # Adjust for plate around anchor, if present
             if anchor.plate and not anchor.in_same_plate(builder):
-                x += 0.3
+                x += 0.1
 
         # Do shifting if specified
         if builder.placement.endswith('_l'):
@@ -407,6 +526,36 @@ class PGM:
             x += 0.3
 
         return x + builder.shift_x, y + builder.shift_y
+
+    def place_plates(self):
+        for plate in self.plates:
+            plate.place()
+
+        # Need to reposition any overlapping plates.
+        self.deconflict_plate_placement()
+
+    def deconflict_plate_placement(self):
+        # We'll figure this out by looking at the nodes inside them.
+        # We could look at the corners, but some plates may be exactly in the middle of others,
+        # and the corners method would fail to find those.
+        all_plates = self.plates[::-1]
+        while all_plates:
+            plate = all_plates.pop()
+            for other in all_plates:
+                if plate.shares_nodes_with(other):
+                    plate.deconflict_placement(other)
+
+    def place(self):
+        x, y, width, height = bound_nodes_with_rect(*self.all_node_builders)
+        x_units = x + width
+        y_units = y + height
+
+        # Need to expand further to accomodate plates, if present
+        # Right now, we just assume plates are present all around.
+        # TODO: actually figure out if plates are present and only expand if so.
+        x_units += 0.3
+        y_units += 0.3
+        return x_units, y_units
 
     def get_edge_pairs(self):
         for node_builder in self.all_node_builders:
