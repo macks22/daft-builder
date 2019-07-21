@@ -1,6 +1,7 @@
 import logging
 import itertools
 
+import matplotlib; matplotlib.use('Agg')
 import daft
 from toposort import toposort
 

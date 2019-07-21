@@ -8,18 +8,21 @@ def name_from_symbol(symbol):
         without_modifier = symbol[start + 1: end] + symbol[end + 1:]
         modifier = symbol[:start]
         base, extras = without_modifier.split('_', 1)
-        return '_'.join([base, modifier, extras])
-    elif '_{' in symbol:  # e.g. X_{i, j}
+        symbol = '_'.join([base, modifier, extras])
+
+    if '_{' in symbol:  # e.g. X_{i, j}
         without_sub, rest = symbol.split('_{', 1)
-        subscript = rest.split('}')[0].replace(',', '').replace(' ', '')
-        return '_'.join([without_sub, subscript])
-    elif '^' in symbol:  # e.g. \sigma_c^2
+        subscript, rest = rest.split('}', 1)
+        subscript = subscript.replace(',', '').replace(' ', '')
+        symbol = '_'.join([without_sub, subscript]) + rest
+
+    if '^' in symbol:  # e.g. \sigma_c^2
         base, exp = symbol.split('^')
         if exp != '2':
             raise ValueError('unable to handle names with exponents not equal to 2')
-        return base + '_' + 'sq'
-    else:
-        return symbol
+        symbol = base + '_' + 'sq'
+
+    return symbol
 
 
 def node_bounds(*nodes):
