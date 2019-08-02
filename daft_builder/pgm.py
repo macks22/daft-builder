@@ -4,6 +4,7 @@ Core builder interfaces.
 """
 import logging
 import itertools
+import copy
 
 import daft
 from toposort import toposort
@@ -345,6 +346,13 @@ class PGM:
         self.nodes += node_builders
         return self
 
+    def get_node(self, name):
+        for node in self.nodes:
+            if node.name == name:
+                return node
+
+        raise KeyError(f"No node with name {name}")
+
     @property
     def plate_node_builders(self):
         return itertools.chain.from_iterable(
@@ -379,6 +387,9 @@ class PGM:
         pgm.add_edges(self.get_edge_pairs())
 
         return pgm
+
+    def copy(self):
+        return copy.deepcopy(self)
 
     def fill_nodes_refd_by_name(self):
         """Sub in actual node daft_builder anywhere node was referenced by name in any plates."""
@@ -466,9 +477,11 @@ class PGM:
 
         # Need to expand further to accommodate plates, if present
         # Right now, we just assume plates are present all around.
-        # TODO: actually figure out if plates are present and only expand if so.
-        x_units += 0.3
-        y_units += 0.3
+        # TODO: actually figure out if plates are present on the outer bounds and only expand if so.
+        if self.plates:
+            x_units += 0.3
+            y_units += 0.3
+
         return x_units, y_units
 
     def get_edge_pairs(self):
