@@ -26,6 +26,7 @@ class _PGM(daft.PGM):
 
     def add_edges(self, names):
         for from_name, to_name in names:
+            logger.debug(f"adding edge from {from_name} to {to_name}")
             self.add_edge(from_name, to_name)
 
 
@@ -159,8 +160,11 @@ class Param(Node):
     def __init__(self, symbol, of=None, **kwargs):
         super().__init__(symbol, **kwargs)
         if of is None:
+            if self.anchor_node is None:
+                raise ValueError(f"Param {self.name} must specify node it's a parameter of via "
+                                 f"the `of` kwarg or a relative placement kwarg")
             self.edges_to += [self.anchor_node]
-        elif isinstance(of, str):
+        elif isinstance(of, (str, int, float)):
             self.edges_to += [of]
         elif hasattr(of, '__iter__'):
             self.edges_to += list(of)
