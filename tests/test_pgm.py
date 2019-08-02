@@ -28,3 +28,13 @@ def test_init_Param_of_multiple_nodes():
 def test_Param_init_requires_valid_anchor():
     with pytest.raises(ValueError):
         pgm.Param(r"$y$", xy=(1, 1))
+
+
+def test_Text_init():
+    t = pgm.Text("some text", xy=(1, 1))
+    assert t.name == "some text"
+    assert t.kwargs['plot_params'] == {"ec": "none"}
+
+    t = pgm.Text("some text", "t", xy=(1, 1))
+    assert t.name == "t"
+    assert t.kwargs['plot_params'] == {"ec": "none"}

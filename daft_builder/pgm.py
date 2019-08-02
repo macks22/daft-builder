@@ -178,6 +178,13 @@ class HyperParam(Param):
         super().__init__(symbol, of, **kwargs)
 
 
+class Text(Node):
+    """Convenience class for a node being used to place text in a PGM."""
+    def __init__(self, text, name=None, **kwargs):
+        kwargs['plot_params'] = {**kwargs.get('plot_params', {}), **{'ec': 'none'}}
+        super().__init__(text, name=name, **kwargs)
+
+
 class Plate:
     """Helper class to build `daft.Plate` objects with nodes inside them."""
 
