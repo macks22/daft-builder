@@ -10,6 +10,9 @@ from toposort import toposort
 
 from daft_builder import utils
 
+DEFAULT_VERTICAL_OFFSET = 1
+DEFAULT_HORIZONTAL_OFFSET = 0.8
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,12 +39,14 @@ class Node:
     _placement_kwargs = ('xy',
                          'above', 'above_l', 'above_r',
                          'below', 'below_l', 'below_r',
-                         'left_of', 'right_of')
+                         'left_of', 'left_of_a', 'left_of_b',
+                         'right_of', 'right_of_a', 'right_of_b')
 
     def __init__(self, symbol, **kwargs):
         """
         Placement can be accomplished with at most one of:
-            xy, above, above_l, above_r, below, below_l, below_r, left_of, right_of
+            xy, above, above_l, above_r, below, below_l, below_r,
+            left_of, left_of_a, left_of_b, right_of, right_of_a, right_of_b
 
         Args:
             symbol (str): symbol to label node with. Can be LaTeX expression.
@@ -317,7 +322,7 @@ class Plate:
 class PGM:
     """Helper class to build PGMs from the bottom-up."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, *, vertical_offset=None, horizontal_offset=None, **kwargs):
         kwargs.setdefault('origin', (0, 0))
         kwargs.setdefault('grid_unit', 4)
         kwargs.setdefault('label_params', {'fontsize': 18})
@@ -326,6 +331,11 @@ class PGM:
         self.kwargs = kwargs
         self.nodes = []
         self.plates = []
+
+        self.vertical_offset = \
+            DEFAULT_VERTICAL_OFFSET if vertical_offset is None else vertical_offset
+        self.horizontal_offset = \
+            DEFAULT_HORIZONTAL_OFFSET if horizontal_offset is None else horizontal_offset
 
     def with_plate(self, plate_builder):
         self.plates.append(plate_builder)
@@ -405,16 +415,16 @@ class PGM:
         anchor_x, anchor_y = anchor.x, anchor.y
 
         if builder.placement.startswith('above'):
-            x, y = (anchor_x, anchor_y + 1)
+            x, y = (anchor_x, anchor_y + self.vertical_offset)
         elif builder.placement.startswith('below'):
-            x, y = (anchor_x, anchor_y - 1)
-        elif builder.placement == 'left_of':
-            x, y = (anchor_x - 0.8, anchor_y)
+            x, y = (anchor_x, anchor_y - self.vertical_offset)
+        elif builder.placement.startswith('left_of'):
+            x, y = (anchor_x - self.horizontal_offset, anchor_y)
             # Adjust for plate around anchor, if present
             if anchor.plate and not anchor.in_same_plate(builder):
                 x -= 0.1
         else:  # right_of
-            x, y = (anchor_x + 0.8, anchor_y)
+            x, y = (anchor_x + self.horizontal_offset, anchor_y)
             # Adjust for plate around anchor, if present
             if anchor.plate and not anchor.in_same_plate(builder):
                 x += 0.1
@@ -424,6 +434,10 @@ class PGM:
             x -= 0.3
         elif builder.placement.endswith('_r'):
             x += 0.3
+        elif builder.placement.endswith('_a'):
+            y += 0.3
+        elif builder.placement.endswith('_b'):
+            y -= 0.3
 
         return x + builder.shift_x, y + builder.shift_y
 
