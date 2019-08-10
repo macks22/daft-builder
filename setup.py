@@ -22,7 +22,7 @@ def setup_package():
 
     setup(
         name="daft-builder",
-        version='1.0.0',
+        version='1.0.1',
         author='Mack Sweeney',
         author_email='mackenzie.sweeney@gmail.com',
         maintainer='Mack Sweeney',
